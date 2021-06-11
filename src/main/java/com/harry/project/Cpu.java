@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.util.Random;
 import java.awt.Graphics2D;
 import java.awt.Color;
+import java.awt.Font;
 
 class Cpu {
   short[] registers = new short[17];
@@ -18,7 +19,7 @@ class Cpu {
   short sp=-1;
   short delayTimer=0;
   short soundTimer=0;
-  int opcode = 0;;
+  int opcode = 0;
   int fontsetStartAddress = 0x50;
   int scale = 5;
   short[] fontset = {
@@ -96,6 +97,7 @@ class Cpu {
     opcode = memory[pc];
     opcode = (opcode << 8) | memory[pc + 1];
     opcode &= 0xffff;
+  //  System.out.println(pc + ": "  + opcode);
     if ((opcode >> 4) == 0x00e) {
       if ((opcode & 0xf) == 0) {
         op_00e0.op();
@@ -119,10 +121,19 @@ class Cpu {
 
   }
 
-  public void printmemory(){
-    for(int a = 0x200; a < 600; a++){
+  public void printmemory() {
+    for (int a = 0x200; a < 600; a++) {
       System.out.println(memory[a]);
     }
+  }
+
+  public void updateTimers() {
+    if (delayTimer > 0) {
+      delayTimer++;
+    }
+    if (soundTimer > 0)
+      soundTimer++;
+    
   }
   
   public void disassemble() {
@@ -176,7 +187,7 @@ class Cpu {
         if (pixel == 0) {
           g2d.setColor(Color.BLACK);
           g2d.fillRect(b * scale, a * scale, scale, scale);
-         // g2d.drawLine(b, a, b, a);
+          // g2d.drawLine(b, a, b, a);
         } else {
           g2d.setColor(Color.WHITE);
           g2d.fillRect(b * scale, a * scale, scale, scale);
@@ -184,7 +195,27 @@ class Cpu {
         }
       }
     }
-
+    g2d.setFont(new Font("TimesRoman", Font.PLAIN, 10));
+    g2d.setColor(Color.red);
+    g2d.drawString("PC: " + String.format("%04x", pc), 325, 10);
+    g2d.drawString("SP: " + String.format("%04x", sp), 405, 10);
+    g2d.drawString("I   : " + String.format("%04x", index), 325, 25);
+    g2d.drawString("V0: " + String.format("%04x", registers[0]), 325, 40);
+    g2d.drawString("V2: " + String.format("%04x", registers[2]), 325, 55);
+    g2d.drawString("V4: " + String.format("%04x", registers[4]), 325, 70);
+    g2d.drawString("V6: " + String.format("%04x", registers[6]), 325, 85);
+    g2d.drawString("V8: " + String.format("%04x", registers[8]), 325, 100);
+    g2d.drawString("VA: " + String.format("%04x", registers[0xa]), 325, 115);
+    g2d.drawString("VC: " + String.format("%04x", registers[0xc]), 325, 130);
+    g2d.drawString("VE: " + String.format("%04x", registers[0xe]), 325, 145);
+    g2d.drawString("V1: " + String.format("%04x", registers[1]), 405, 40);
+    g2d.drawString("V3: " + String.format("%04x", registers[3]), 405, 55);
+    g2d.drawString("V5: " + String.format("%04x", registers[5]), 405, 70);
+    g2d.drawString("V7: " + String.format("%04x", registers[7]), 405, 85);
+    g2d.drawString("V9: " + String.format("%04x", registers[9]), 405, 100);
+    g2d.drawString("VB: " + String.format("%04x", registers[0xb]), 405, 115);
+    g2d.drawString("VD: " + String.format("%04x", registers[0xd]), 405, 130);
+    g2d.drawString("VF: " + String.format("%04x", registers[0xf]), 405, 145);
   }
 
   public void loadFontstoVideo() {
@@ -204,6 +235,7 @@ class Cpu {
   public boolean loadRom(final String file) {
     FileInputStream fin = null;
     BufferedInputStream bin = null;
+    //System.out.println("filename: " + file);
     try{
     fin = new FileInputStream(file);
     bin = new BufferedInputStream(fin);
@@ -215,6 +247,7 @@ class Cpu {
       positionInMemory++;
     }
     fin.close();
+    bin.close();
     }
     catch (FileNotFoundException e) {
       System.out.println("File not found");
@@ -228,6 +261,7 @@ class Cpu {
       if (fin != null) {
         try{
           fin.close();
+          bin.close();
         }
         catch (IOException e) {
 
@@ -267,6 +301,7 @@ class Cpu {
       for (int a = 0; a < 64 * 32; a++) {
         video[a] = 0;
       }
+      registers[0xf] = 1;
 
     }
 
@@ -284,6 +319,7 @@ class Cpu {
     public void op() {
       pc = stack[sp];
       sp--;
+      pc -= 2;
 
     }
 
@@ -319,6 +355,7 @@ class Cpu {
       sp++;
       stack[sp] = pc;
       pc = opcode & 0xfff;
+      pc -= 2;
 
     }
 
@@ -617,10 +654,7 @@ class Cpu {
 
   class Op_Annn implements Opcode {
     String op_name = "LD I, addr";
-
-    @Override
-    public void op() {
-      index = opcode & 0xfff;
+@Override public void op() { index = opcode & 0xfff;
     }
 
     @Override
@@ -676,17 +710,51 @@ class Cpu {
       final int Vy = (opcode >> 4) & 0xf;
       final int x_pos = registers[Vx];
       final int y_pos = registers[Vy];
+      registers[0xf] = 0;
       for (int a = 0; a < (opcode & 0xf); a++) {
         final short sprite_byte = memory[index + a];
         final int pos = (((y_pos + a) % 32) * 64);
+        int afterPixel;
+        int beforePixel = video[pos + ((x_pos + 0) % 64)];
         video[pos + ((x_pos + 0) % 64)] ^= (short) ((sprite_byte >> 7) & 0x1);
+        afterPixel = video[pos + ((x_pos + 0) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 1) % 64)];
         video[pos + ((x_pos + 1) % 64)] ^= (short) ((sprite_byte >> 6) & 0x1);
+        afterPixel = video[pos + ((x_pos + 1) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 2) % 64)];
         video[pos + ((x_pos + 2) % 64)] ^= (short) ((sprite_byte >> 5) & 0x1);
+        afterPixel = video[pos + ((x_pos + 2) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 3) % 64)];
         video[pos + ((x_pos + 3) % 64)] ^= (short) ((sprite_byte >> 4) & 0x1);
+        afterPixel = video[pos + ((x_pos + 3) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 4) % 64)];
         video[pos + ((x_pos + 4) % 64)] ^= (short) ((sprite_byte >> 3) & 0x1);
+        afterPixel = video[pos + ((x_pos + 4) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 5) % 64)];
         video[pos + ((x_pos + 5) % 64)] ^= (short) ((sprite_byte >> 2) & 0x1);
+        afterPixel = video[pos + ((x_pos + 5) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 6) % 64)];
         video[pos + ((x_pos + 6) % 64)] ^= (short) ((sprite_byte >> 1) & 0x1);
+        afterPixel = video[pos + ((x_pos + 6) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
+        beforePixel = video[pos + ((x_pos + 7) % 64)];
         video[pos + ((x_pos + 7) % 64)] ^= (short) ((sprite_byte >> 0) & 0x1);
+        afterPixel = video[pos + ((x_pos + 7) % 64)];
+        if ((beforePixel == 1) && afterPixel == 0)
+          registers[0xf] = 1;
 
       }
 
@@ -859,7 +927,9 @@ class Cpu {
       memory[index + 2] = (short) (result % 10);
       result = registers[Vx] / 10;
       memory[index + 1] =(short) (result % 10);
-      memory[index ] = (short)(result / 10);
+      memory[index] = (short) (result / 10);
+      index += 3;
+      index &= 0xfff;
 
     }
 
@@ -877,9 +947,11 @@ class Cpu {
     public void op() {
       final int Vx = (opcode >> 8) & 0xf;
       memory[index + Vx] = registers[Vx];
-      for (int a = 0; a < Vx ; a++) {
+      for (int a = 0; a < Vx; a++) {
         memory[a + index] = registers[a];
       }
+      //index += Vx + 1;
+      //index &= 0xfff;
 
     }
 
@@ -900,6 +972,8 @@ class Cpu {
       for (int a = 0; a < Vx; a++) {
         registers[a] = memory[a + index];
       }
+      //index += Vx + 1;
+      //index &= 0xfff;
 
     }
 
